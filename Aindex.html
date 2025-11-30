@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Debug - 3D Face Analyzer</title>
+  <style>
+    body { font-family: Arial; padding: 20px; background: #f0f0f0; }
+    #log { background: white; border: 1px solid #ccc; padding: 15px; height: 200px; overflow-y: auto; margin: 10px 0; font-size: 12px; }
+    #three-container { width: 600px; height: 400px; border: 1px solid #333; margin: 10px 0; }
+    button { padding: 10px 20px; margin: 5px; }
+  </style>
+</head>
+<body>
+  <h1>🔧 Debug Version</h1>
+  <div id="status">Starting...</div>
+  <div id="log"></div>
+  <input type="file" id="imageUpload" accept="image/*" disabled>
+  <button onclick="testLibraries()" disabled>📚 Test Libraries</button>
+  <div id="three-container"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.14/dist/face-api.js"></script>
+
+  <script>
+    const log = (msg) => {
+      console.log(msg);
+      const logDiv = document.getElementById('log');
+      logDiv.innerHTML += new Date().toLocaleTimeString() + ': ' + msg + '<br>';
+      logDiv.scrollTop = logDiv.scrollHeight;
+    };
+
+    let modelsReady = false;
+    let scene, camera, renderer, controls;
+
+    // Test if libraries loaded
+    function testLibraries() {
+      log('THREE: ' + (typeof THREE !== 'undefined' ? '✅ Loaded' : '❌ Missing'));
+      log('OrbitControls: ' + (typeof THREE.OrbitControls !== 'undefined' ? '✅ Loaded' : '❌ Missing'));
+      log('faceapi: ' + (typeof faceapi !== 'undefined' ? '✅ Loaded' : '❌ Missing'));
+      log('faceapi.nets: ' + (faceapi.nets ? '✅ Available' : '❌ Missing'));
+    }
+
+    async function loadModels() {
+      log('🚀 Loading models...');
+      try {
+        const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+        log('Model URL: ' + MODEL_URL);
+        
+        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+        log('✅ tinyFaceDetector loaded');
+        
+        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+        log('✅ faceLandmark68Net loaded');
+        
+        modelsReady = true;
+        document.getElementById('status').textContent = '✅ READY! Upload image';
+        document.getElementById('imageUpload').disabled = false;
+        document.querySelector('button').disabled = false;
+      } catch (error) {
+        log('❌ Model Error: ' + error.message);
+      }
+    }
+
+    function initThreeJS() {
+      log('🎮 Initializing Three.js...');
+      const container = document.getElementById('three-container');
+      
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xcccccc);
+      
+      camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+      camera.position.z = 5;
+      
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(container.clientWidth, container.clientHeight);
+      container.appendChild(renderer.domElement);
+      
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      
+      const light = new THREE.AmbientLight(0xffffff, 0.8);
+      scene.add(light);
+      
+      const testCube = new THREE.Mesh(
+        new THREE.BoxGeometry(1,1,1),
+        new THREE.MeshBasicMaterial({color: 0x00ff00})
+      );
+      scene.add(testCube);
+      
+      function animate() {
+        requestAnimationFrame(animate);
+        testCube.rotation.y += 0.01;
+        controls.update();
+        renderer.render(scene, camera);
+      }
+      animate();
+      log('✅ Three.js ready (green cube spinning)');
+    }
+
+    // Image processing
+    document.getElementById('imageUpload').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      log('📸 Processing: ' + file.name);
+      
+      const img = await faceapi.bufferToImage(file);
+      log('✅ Image created');
+      
+      const detections = await faceapi
+        .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions())
+        .withFaceLandmarks();
+      
+      if (detections && detections.landmarks) {
+        log('✅ Face detected! ' + detections.landmarks.positions.length + ' points');
+        // Simple visualization - red points
+        const geometry = new THREE.BufferGeometry();
+        const vertices = [];
+        detections.landmarks.positions.forEach(pt => {
+          vertices.push(pt.x / 100 - 3, -pt.y / 100 + 3, 0);
+        });
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        const points = new THREE.Points(geometry, new THREE.PointsMaterial({color: 0xff0000, size: 0.1}));
+        scene.add(points);
+        log('✅ Red points added to 3D scene');
+      } else {
+        log('❌ No face detected');
+      }
+    });
+
+    // Start
+    window.onload = () => {
+      log('🌐 Page loaded');
+      testLibraries();
+      initThreeJS();
+      loadModels();
+    };
+  </script>
+</body>
+</html>
